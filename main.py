@@ -2,7 +2,6 @@ from flask import Flask, request
 import requests
 import pandas as pd
 import pandas_ta as ta
-import json
 
 app = Flask(__name__)
 
@@ -11,8 +10,9 @@ TELEGRAM_TOKEN = "8977850121:AAFyIf67j078f3lZYtZEELSzLQ-kdZRI3zw"
 CHAT_ID = "1964686877"
 
 RSI_PERIOD = 14
-RSI_BUY_LEVEL = 35
-RSI_SELL_LEVEL = 65
+RSI_BUY_LEVEL = 35      # زیر این عدد برای خرید
+RSI_SELL_LEVEL = 65     # بالای این عدد برای فروش
+RSI_TIMEFRAME = "15"    # تایم‌فریم ۱۵ دقیقه
 
 def send_telegram(message):
     try:
@@ -28,39 +28,40 @@ def send_telegram(message):
 
 def get_rsi(symbol):
     try:
-        # استفاده از API عمومی‌تر
-        url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=15&limit=100"
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0"
+        url = "https://api.bybit.com/v5/market/kline"
+        params = {
+            "category": "linear",
+            "symbol": symbol,
+            "interval": RSI_TIMEFRAME,   # <-- تایم‌فریم ۱۵ دقیقه
+            "limit": 100
         }
+
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, params=params, headers=headers, timeout=10)
         
-        response = requests.get(url, headers=headers, timeout=10)
-        print("Bybit Status Code:", response.status_code)
-        print("Bybit Response:", response.text[:300])  # برای دیدن پاسخ
+        print("Status Code:", response.status_code)
         
         data = response.json()
-        
+
         if data.get("retCode") != 0:
             print("Bybit Error:", data.get("retMsg"))
             return None
-            
+
         klines = data["result"]["list"]
         
-        if not klines or len(klines) < 20:
-            print("Not enough kline data")
+        if not klines or len(klines) < RSI_PERIOD + 5:
+            print("Not enough data")
             return None
-            
-        # داده‌ها از جدید به قدیم هستند
-        closes = [float(k[4]) for k in reversed(klines)]
+
+        # داده‌ها از جدید به قدیم هستند → برعکس می‌کنیم
+        closes = [float(item[4]) for item in reversed(klines)]
         
-        series = pd.Series(closes)
-        rsi = ta.rsi(series, length=RSI_PERIOD)
+        rsi = ta.rsi(pd.Series(closes), length=RSI_PERIOD)
         
         return round(float(rsi.iloc[-1]), 2)
-        
+
     except Exception as e:
-        print("Error getting RSI:", str(e))
+        print("Error getting RSI:", e)
         return None
 
 @app.route('/webhook', methods=['POST'])
@@ -74,22 +75,22 @@ def webhook():
         price = data.get("price", "N/A")
 
         rsi_value = get_rsi(ticker)
-        print(f"RSI Result: {rsi_value}")
+        print(f"RSI (15m) for {ticker}: {rsi_value}")
 
         if rsi_value is None:
-            send_telegram(f"⚠️ خطا در دریافت RSI برای {ticker}")
+            send_telegram(f"⚠️ خطا در دریافت RSI ۱۵ دقیقه برای {ticker}")
             return "Error", 200
 
         if side == "buy" and rsi_value < RSI_BUY_LEVEL:
-            msg = f"🟢 <b>سیگنال خرید تأیید شد</b>\n\nجفت‌ارز: {ticker}\nقیمت: {price}\nRSI: {rsi_value}"
+            msg = f"🟢 <b>سیگنال خرید تأیید شد</b>\n\nجفت‌ارز: {ticker}\nقیمت: {price}\nRSI (15m): {rsi_value}"
             send_telegram(msg)
-            
+
         elif side == "sell" and rsi_value > RSI_SELL_LEVEL:
-            msg = f"🔴 <b>سیگنال فروش تأیید شد</b>\n\nجفت‌ارز: {ticker}\nقیمت: {price}\nRSI: {rsi_value}"
+            msg = f"🔴 <b>سیگنال فروش تأیید شد</b>\n\nجفت‌ارز: {ticker}\nقیمت: {price}\nRSI (15m): {rsi_value}"
             send_telegram(msg)
-            
+
         else:
-            print(f"Condition not met | Side: {side} | RSI: {rsi_value}")
+            print(f"شرط برقرار نبود | Side: {side} | RSI 15m: {rsi_value}")
 
         return "OK", 200
 
