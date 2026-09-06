@@ -7,8 +7,8 @@ import pandas_ta as ta
 app = Flask(__name__)
 
 # ================== تنظیمات ==================
-TELEGRAM_TOKEN = "توکن_ربات_تلگرام_اینجا"
-CHAT_ID = "چت_آیدی_خودت_اینجا"
+TELEGRAM_TOKEN = "8849479878:AAGjdVqt5gsKnkNIPDMqPdsMAhhP7d8yuQIا"
+CHAT_ID = "1964686877"
 
 RSI_PERIOD = 14
 RSI_BUY_LEVEL = 30
