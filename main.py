@@ -8,6 +8,7 @@ app = Flask(__name__)
 # ================== تنظیمات ==================
 TELEGRAM_TOKEN = "8977850121:AAFyIf67j078f3lZYtZEELSzLQ-kdZRI3zw"
 CHAT_ID = "1964686877"
+
 RSI_PERIOD = 14
 RSI_BUY_LEVEL = 35      # زیر این عدد برای خرید
 RSI_SELL_LEVEL = 65     # بالای این عدد برای فروش
@@ -49,4 +50,55 @@ def get_rsi(symbol, interval="15"):
         klines = data["result"]["list"]
         
         if not klines:
-            print("No kline
+            print("No kline data")
+            return None
+
+        # Bybit داده‌ها را از جدید به قدیم می‌دهد، پس برعکس می‌کنیم
+        closes = [float(item[4]) for item in reversed(klines)]
+        
+        df = pd.DataFrame({"close": closes})
+        rsi = ta.rsi(df["close"], length=RSI_PERIOD)
+        
+        return round(float(rsi.iloc[-1]), 2)
+        
+    except Exception as e:
+        print("Error getting RSI:", e)
+        return None
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    try:
+        data = request.json
+        print("Received:", data)
+
+        side = str(data.get("side", "")).lower()
+        ticker = str(data.get("ticker", "")).replace(".P", "").replace("/", "").upper()
+        price = data.get("price", "N/A")
+
+        rsi_value = get_rsi(ticker)
+
+        if rsi_value is None:
+            send_telegram(f"⚠️ خطا در دریافت RSI برای {ticker}")
+            return "Error", 200
+
+        print(f"RSI for {ticker}: {rsi_value}")
+
+        if side == "buy" and rsi_value < RSI_BUY_LEVEL:
+            message = f"🟢 <b>سیگنال خرید تأیید شد</b>\n\nجفت‌ارز: {ticker}\nقیمت: {price}\nRSI: {rsi_value}"
+            send_telegram(message)
+
+        elif side == "sell" and rsi_value > RSI_SELL_LEVEL:
+            message = f"🔴 <b>سیگنال فروش تأیید شد</b>\n\nجفت‌ارز: {ticker}\nقیمت: {price}\nRSI: {rsi_value}"
+            send_telegram(message)
+
+        else:
+            print(f"شرط برقرار نبود → Side: {side} | RSI: {rsi_value}")
+
+        return "OK", 200
+
+    except Exception as e:
+        print("Webhook Error:", e)
+        return "Error", 200
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
